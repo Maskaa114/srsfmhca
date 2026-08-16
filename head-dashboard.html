@@ -20,7 +20,7 @@
 
   <div class="card">
     <h2>Submit your performance report</h2>
-    <p class="hint">Fill in your department, your target and what you actually achieved. Upload your report file (Word, Excel, or PDF) to Google Drive first, then paste the share link here. The percentage is calculated for you automatically.</p>
+    <p class="hint">Fill in your department, your target and what you actually achieved, then attach your report file directly. The percentage is calculated for you automatically.</p>
 
     <label for="deptName">Your department</label>
     <input type="text" id="deptName" placeholder="e.g. Finance, HR, Health Services" />
@@ -37,9 +37,9 @@
     <label for="repDate">Report date</label>
     <input type="date" id="repDate" />
 
-    <label for="fileLink">Google Drive link to your report file</label>
-    <input type="text" id="fileLink" placeholder="https://drive.google.com/..." />
-    <p class="hint">In Google Drive: right-click your file &gt; Share &gt; Copy link. Make sure it says "Anyone with the link can view".</p>
+    <label for="fileInput">Attach your report file (Word, Excel, or PDF)</label>
+    <input type="file" id="fileInput" accept=".doc,.docx,.xls,.xlsx,.pdf" />
+    <p class="hint">Keep the file under 700 KB (a text-based Word/Excel report is normally fine).</p>
 
     <button class="btn" id="submitBtn">Submit report</button>
     <div class="msg" id="msg"></div>
@@ -89,26 +89,37 @@
 
   document.getElementById("logoutBtn").addEventListener("click", () => signOut(auth));
 
+  function readFileAsDataURL(file) {
+    return new Promise((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onload = () => resolve(reader.result);
+      reader.onerror = () => reject(reader.error);
+      reader.readAsDataURL(file);
+    });
+  }
+
   document.getElementById("submitBtn").addEventListener("click", async () => {
     const department = document.getElementById("deptName").value.trim();
     const headName = document.getElementById("headName").value.trim();
     const target = parseFloat(document.getElementById("target").value);
     const actual = parseFloat(document.getElementById("actual").value);
     const repDate = document.getElementById("repDate").value;
-    const fileURL = document.getElementById("fileLink").value.trim();
+    const file = document.getElementById("fileInput").files[0];
 
     if (!department) { showMsg("Please type your department name.", false); return; }
     if (!headName) { showMsg("Please type your name.", false); return; }
     if (isNaN(target) || target <= 0) { showMsg("Please enter a valid target number.", false); return; }
     if (isNaN(actual) || actual < 0) { showMsg("Please enter a valid actual number.", false); return; }
     if (!repDate) { showMsg("Please choose a date.", false); return; }
-    if (!fileURL.startsWith("http")) { showMsg("Please paste a valid Google Drive link.", false); return; }
+    if (!file) { showMsg("Please attach your report file.", false); return; }
+    if (file.size > 700 * 1024) { showMsg("That file is too big. Please keep it under 700 KB.", false); return; }
 
     document.getElementById("submitBtn").disabled = true;
     showMsg("Submitting, please wait...", true);
 
     try {
       const percentage = Math.round((actual / target) * 1000) / 10;
+      const fileURL = await readFileAsDataURL(file);
 
       await addDoc(collection(db, "reports"), {
         department,
@@ -117,6 +128,7 @@
         target, actual, percentage,
         date: repDate,
         fileURL,
+        fileName: file.name,
         createdAt: serverTimestamp()
       });
 
@@ -126,7 +138,7 @@
       document.getElementById("target").value = "";
       document.getElementById("actual").value = "";
       document.getElementById("repDate").value = "";
-      document.getElementById("fileLink").value = "";
+      document.getElementById("fileInput").value = "";
     } catch (err) {
       showMsg("Submit failed: " + err.message, false);
     }
@@ -139,6 +151,14 @@
     return "low";
   }
 
+  function fileKind(name) {
+    const ext = (name || "").split(".").pop().toLowerCase();
+    if (["doc", "docx"].includes(ext)) return { label: "Word", cls: "word" };
+    if (["xls", "xlsx"].includes(ext)) return { label: "Excel", cls: "excel" };
+    if (ext === "pdf") return { label: "PDF", cls: "pdf" };
+    return { label: "File", cls: "generic" };
+  }
+
   function listenToRecentSubmissions() {
     const q = query(collection(db, "reports"), orderBy("createdAt", "desc"), limit(20));
     onSnapshot(q, (snap) => {
@@ -147,6 +167,7 @@
       document.getElementById("emptyMsg").style.display = snap.empty ? "block" : "none";
       snap.forEach((d) => {
         const r = d.data();
+        const kind = fileKind(r.fileName);
         const tr = document.createElement("tr");
         tr.innerHTML = `
           <td>${r.department}</td>
@@ -155,7 +176,7 @@
           <td>${r.target}</td>
           <td>${r.actual}</td>
           <td><span class="pill ${pillClass(r.percentage)}">${r.percentage}%</span></td>
-          <td><a class="link" href="${r.fileURL}" target="_blank">Open file</a></td>
+          <td><a class="file-btn ${kind.cls}" href="${r.fileURL}" download="${r.fileName || 'report'}">${kind.label}</a></td>
         `;
         body.appendChild(tr);
       });
