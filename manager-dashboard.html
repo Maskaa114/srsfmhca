@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0" />
 <title>Manager Dashboard | SRSFMHCA</title>
 <link rel="stylesheet" href="style.css" />
-<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.4/chart.umd.min.js"></script>
+<script src="chart.min.js"></script>
 </head>
 <body>
 
@@ -198,6 +198,7 @@
   }
 
   function renderChart() {
+    if (typeof Chart === "undefined") { showChartFallback("chart"); return; }
     // one bar per department, using each department's most recent report
     const latestByDept = latestByDepartment();
     const labels = Object.keys(latestByDept);
@@ -224,7 +225,19 @@
     });
   }
 
+  function showChartFallback(canvasId) {
+    const el = document.getElementById(canvasId);
+    if (el && el.parentNode && !el.dataset.fallbackShown) {
+      el.dataset.fallbackShown = "1";
+      const p = document.createElement("p");
+      p.className = "empty";
+      p.textContent = "Chart could not load. The numbers are still available in the table below.";
+      el.parentNode.appendChild(p);
+    }
+  }
+
   function renderStatusChart() {
+    if (typeof Chart === "undefined") { showChartFallback("statusChart"); return; }
     const latest = latestByDepartment();
     const values = Object.values(latest);
     const good = values.filter(r => r.percentage >= 90).length;
@@ -270,12 +283,10 @@
     const q = query(collection(db, "reports"), orderBy("createdAt", "desc"));
     onSnapshot(q, (snap) => {
       allReports = snap.docs.map(d => d.data());
-      fillDeptFilter();
-      renderTable(document.getElementById("deptFilter").value);
-      renderChart();
-      renderStatusChart();
-      renderStats();
-      renderRankLists();
+      const steps = [fillDeptFilter, () => renderTable(document.getElementById("deptFilter").value), renderChart, renderStatusChart, renderStats, renderRankLists];
+      steps.forEach((fn) => {
+        try { fn(); } catch (err) { console.error(fn.name, err); }
+      });
     });
   }
 </script>
