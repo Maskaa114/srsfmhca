@@ -19,10 +19,55 @@
 
 <div class="wrap">
 
+  <div class="stats-row" id="statsRow">
+    <div class="stat-card">
+      <div class="stat-label">Total reports</div>
+      <div class="stat-value" id="statTotal">–</div>
+    </div>
+    <div class="stat-card">
+      <div class="stat-label">Departments reporting</div>
+      <div class="stat-value" id="statDepts">–</div>
+    </div>
+    <div class="stat-card">
+      <div class="stat-label">Average achievement</div>
+      <div class="stat-value" id="statAvg">–</div>
+    </div>
+    <div class="stat-card">
+      <div class="stat-label">On target (90%+)</div>
+      <div class="stat-value good" id="statGood">–</div>
+    </div>
+    <div class="stat-card">
+      <div class="stat-label">Below target (&lt;60%)</div>
+      <div class="stat-value low" id="statLow">–</div>
+    </div>
+  </div>
+
+  <div class="two-col">
+    <div class="card">
+      <h2>Performance by department (latest submission each)</h2>
+      <p class="hint">This graph updates by itself every time a department head submits a new report.</p>
+      <canvas id="chart" height="200"></canvas>
+    </div>
+
+    <div class="card">
+      <h2>Overall status split</h2>
+      <p class="hint">Share of departments on target, at risk, or behind.</p>
+      <canvas id="statusChart" height="200"></canvas>
+    </div>
+  </div>
+
   <div class="card">
-    <h2>Performance by department (latest submission each)</h2>
-    <p class="hint">This graph updates by itself every time a department head submits a new report.</p>
-    <canvas id="chart" height="90"></canvas>
+    <h2>Top &amp; bottom performers</h2>
+    <div class="two-col" style="margin-top:4px;">
+      <div>
+        <p class="hint" style="margin-top:0;">Highest achievement</p>
+        <ol id="topList" class="rank-list"></ol>
+      </div>
+      <div>
+        <p class="hint" style="margin-top:0;">Needs attention</p>
+        <ol id="bottomList" class="rank-list"></ol>
+      </div>
+    </div>
   </div>
 
   <div class="card">
@@ -68,6 +113,7 @@
   }
 
   let chart = null;
+  let statusChart = null;
   let allReports = [];
 
   function renderTable(filterDept) {
@@ -90,12 +136,60 @@
     });
   }
 
-  function renderChart() {
-    // one bar per department, using each department's most recent report
-    const latestByDept = {};
+  function latestByDepartment() {
+    const latest = {};
     allReports.forEach((r) => {
-      if (!latestByDept[r.department]) latestByDept[r.department] = r;
+      if (!latest[r.department]) latest[r.department] = r;
     });
+    return latest;
+  }
+
+  function renderStats() {
+    const latest = latestByDepartment();
+    const values = Object.values(latest);
+    const total = allReports.length;
+    const deptCount = values.length;
+    const avg = values.length ? Math.round((values.reduce((s, r) => s + r.percentage, 0) / values.length) * 10) / 10 : 0;
+    const good = values.filter(r => r.percentage >= 90).length;
+    const low = values.filter(r => r.percentage < 60).length;
+
+    document.getElementById("statTotal").textContent = total;
+    document.getElementById("statDepts").textContent = deptCount;
+    document.getElementById("statAvg").textContent = values.length ? avg + "%" : "–";
+    document.getElementById("statGood").textContent = good;
+    document.getElementById("statLow").textContent = low;
+  }
+
+  function renderRankLists() {
+    const latest = latestByDepartment();
+    const values = Object.values(latest).sort((a, b) => b.percentage - a.percentage);
+
+    const topList = document.getElementById("topList");
+    const bottomList = document.getElementById("bottomList");
+    topList.innerHTML = "";
+    bottomList.innerHTML = "";
+
+    if (values.length === 0) {
+      topList.innerHTML = '<li class="empty" style="list-style:none;">No data yet.</li>';
+      bottomList.innerHTML = '<li class="empty" style="list-style:none;">No data yet.</li>';
+      return;
+    }
+
+    values.slice(0, 5).forEach((r) => {
+      const li = document.createElement("li");
+      li.innerHTML = `${r.department} — <span class="pill ${pillClass(r.percentage)}">${r.percentage}%</span>`;
+      topList.appendChild(li);
+    });
+
+    values.slice(-5).reverse().forEach((r) => {
+      const li = document.createElement("li");
+      li.innerHTML = `${r.department} — <span class="pill ${pillClass(r.percentage)}">${r.percentage}%</span>`;
+      bottomList.appendChild(li);
+    });
+  }
+
+  function renderChart() {
+    const latestByDept = latestByDepartment();
     const labels = Object.keys(latestByDept);
     const values = labels.map((d) => latestByDept[d].percentage);
     const colors = values.map((v) => v >= 90 ? "#1e7a3e" : v >= 60 ? "#d98e33" : "#c0392b");
@@ -116,6 +210,31 @@
       options: {
         plugins: { legend: { display: false } },
         scales: { y: { beginAtZero: true, ticks: { callback: (v) => v + "%" } } }
+      }
+    });
+  }
+
+  function renderStatusChart() {
+    const latest = latestByDepartment();
+    const values = Object.values(latest);
+    const good = values.filter(r => r.percentage >= 90).length;
+    const mid = values.filter(r => r.percentage >= 60 && r.percentage < 90).length;
+    const low = values.filter(r => r.percentage < 60).length;
+
+    const ctx = document.getElementById("statusChart").getContext("2d");
+    if (statusChart) statusChart.destroy();
+    statusChart = new Chart(ctx, {
+      type: "doughnut",
+      data: {
+        labels: ["On target (90%+)", "At risk (60–89%)", "Behind (<60%)"],
+        datasets: [{
+          data: [good, mid, low],
+          backgroundColor: ["#1e7a3e", "#d98e33", "#c0392b"],
+          borderWidth: 0
+        }]
+      },
+      options: {
+        plugins: { legend: { position: "bottom" } }
       }
     });
   }
@@ -144,6 +263,9 @@
       fillDeptFilter();
       renderTable(document.getElementById("deptFilter").value);
       renderChart();
+      renderStatusChart();
+      renderStats();
+      renderRankLists();
     });
   }
 </script>
