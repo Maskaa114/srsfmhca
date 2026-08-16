@@ -20,6 +20,7 @@ import {
   query,
   where,
   orderBy,
+  limit,
   onSnapshot,
   serverTimestamp
 } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
@@ -31,12 +32,9 @@ const firebaseConfig = {
   messagingSenderId: "427923691545",
   appId: "1:427923691545:web:9202635d459e98128ff288"
 };
-
 const app = initializeApp(firebaseConfig);
-
 export const auth = getAuth(app);
 export const db = getFirestore(app);
-
 export {
   signInWithEmailAndPassword,
   signOut,
@@ -49,6 +47,7 @@ export {
   query,
   where,
   orderBy,
+  limit,
   onSnapshot,
   serverTimestamp
 };
