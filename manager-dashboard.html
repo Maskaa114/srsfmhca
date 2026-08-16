@@ -76,7 +76,7 @@
     <select id="deptFilter"><option value="">All departments</option></select>
     <table style="margin-top:16px;">
       <thead>
-        <tr><th>Department</th><th>Head</th><th>Date</th><th>Target</th><th>Actual</th><th>%</th><th>File</th></tr>
+        <tr><th>Department</th><th>Head</th><th>Date</th><th>Target</th><th>Actual</th><th>%</th><th>Report</th></tr>
       </thead>
       <tbody id="allTableBody"></tbody>
     </table>
@@ -116,6 +116,14 @@
   let statusChart = null;
   let allReports = [];
 
+  function fileKind(name) {
+    const ext = (name || "").split(".").pop().toLowerCase();
+    if (["doc", "docx"].includes(ext)) return { label: "Word", cls: "word" };
+    if (["xls", "xlsx"].includes(ext)) return { label: "Excel", cls: "excel" };
+    if (ext === "pdf") return { label: "PDF", cls: "pdf" };
+    return { label: "File", cls: "generic" };
+  }
+
   function renderTable(filterDept) {
     const body = document.getElementById("allTableBody");
     body.innerHTML = "";
@@ -123,6 +131,7 @@
     document.getElementById("emptyMsg").style.display = rows.length === 0 ? "block" : "none";
     rows.forEach((r) => {
       const tr = document.createElement("tr");
+      const kind = fileKind(r.fileName);
       tr.innerHTML = `
         <td>${r.department}</td>
         <td>${r.headName}</td>
@@ -130,7 +139,7 @@
         <td>${r.target}</td>
         <td>${r.actual}</td>
         <td><span class="pill ${pillClass(r.percentage)}">${r.percentage}%</span></td>
-        <td><a class="link" href="${r.fileURL}" target="_blank">Open file</a></td>
+        <td><a class="file-btn ${kind.cls}" href="${r.fileURL}" download="${r.fileName || 'report'}">${kind.label} — download</a></td>
       `;
       body.appendChild(tr);
     });
@@ -189,6 +198,7 @@
   }
 
   function renderChart() {
+    // one bar per department, using each department's most recent report
     const latestByDept = latestByDepartment();
     const labels = Object.keys(latestByDept);
     const values = labels.map((d) => latestByDept[d].percentage);
