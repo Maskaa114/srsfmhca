@@ -20,7 +20,7 @@
 
   <div class="card">
     <h2>Submit your performance report</h2>
-    <p class="hint">Fill in your department, your target and what you actually achieved, then attach your report file directly. The percentage is calculated for you automatically.</p>
+    <p class="hint">Fill in your department and date, then add each activity (SN, Activity, S.M 2019, 2018 actual, 2019 target, and the four quarters). The overall percentage is calculated for you automatically from these numbers.</p>
 
     <label for="deptName">Your department</label>
     <input type="text" id="deptName" placeholder="e.g. Finance, HR, Health Services" />
@@ -28,16 +28,14 @@
     <label for="headName">Your name</label>
     <input type="text" id="headName" placeholder="e.g. Faadumo Ali" />
 
-    <label for="target">Target (planned number)</label>
-    <input type="number" id="target" placeholder="e.g. 100" />
-
-    <label for="actual">Actual (what was achieved)</label>
-    <input type="number" id="actual" placeholder="e.g. 82" />
-
     <label for="repDate">Report date</label>
     <input type="date" id="repDate" />
 
-    <label for="fileInput">Attach your report file (Word, Excel, or PDF)</label>
+    <h2 style="margin-top:26px;">Activities (Shaqooyinka Laqabanayo)</h2>
+    <div id="activitiesWrap"></div>
+    <button type="button" class="btn secondary-btn" id="addRowBtn">+ Add activity</button>
+
+    <label for="fileInput" style="margin-top:22px;">Attach file (optional — Word, Excel, or PDF)</label>
     <input type="file" id="fileInput" accept=".doc,.docx,.xls,.xlsx,.pdf" />
     <p class="hint">Keep the file under 700 KB (a text-based Word/Excel report is normally fine).</p>
 
@@ -69,6 +67,7 @@
 
   const msg = document.getElementById("msg");
   let currentUser = null;
+  let rowCount = 0;
 
   function showMsg(text, ok) {
     msg.className = ok ? "msg ok" : "msg error";
@@ -89,6 +88,105 @@
 
   document.getElementById("logoutBtn").addEventListener("click", () => signOut(auth));
 
+  // ---------- Activity rows ----------
+
+  function addActivityRow() {
+    rowCount++;
+    const wrap = document.getElementById("activitiesWrap");
+    const row = document.createElement("div");
+    row.className = "activity-row";
+    row.dataset.sn = rowCount;
+    row.innerHTML = `
+      <div class="activity-row-head">
+        <span class="activity-sn">SN ${rowCount}</span>
+        <button type="button" class="remove-row-btn">Remove</button>
+      </div>
+      <label>Shaqada / Activity</label>
+      <input type="text" class="act-activity" placeholder="e.g. Community health training" />
+
+      <div class="activity-grid">
+        <div>
+          <label>S.M 2019 (Baseline)</label>
+          <input type="number" class="act-baseline" placeholder="0" />
+        </div>
+        <div>
+          <label>Gun Dhiga 2018 (2018 actual)</label>
+          <input type="number" class="act-actual2018" placeholder="0" />
+        </div>
+        <div>
+          <label>Target 2019</label>
+          <input type="number" class="act-target" placeholder="0" />
+        </div>
+        <div>
+          <label>Rubuca 1aad (Q1)</label>
+          <input type="number" class="act-q1" placeholder="0" />
+        </div>
+        <div>
+          <label>Rubuca 2aad (Q2)</label>
+          <input type="number" class="act-q2" placeholder="0" />
+        </div>
+        <div>
+          <label>Rubuca 3aad (Q3)</label>
+          <input type="number" class="act-q3" placeholder="0" />
+        </div>
+        <div>
+          <label>Rubuca 4aad (Q4)</label>
+          <input type="number" class="act-q4" placeholder="0" />
+        </div>
+      </div>
+
+      <label>Faalo / Remarks</label>
+      <input type="text" class="act-remarks" placeholder="Optional notes" />
+    `;
+    row.querySelector(".remove-row-btn").addEventListener("click", () => {
+      row.remove();
+      renumberRows();
+    });
+    wrap.appendChild(row);
+  }
+
+  function renumberRows() {
+    const rows = document.querySelectorAll("#activitiesWrap .activity-row");
+    rows.forEach((row, i) => {
+      row.querySelector(".activity-sn").textContent = "SN " + (i + 1);
+    });
+  }
+
+  document.getElementById("addRowBtn").addEventListener("click", addActivityRow);
+  addActivityRow(); // start with one row
+
+  function num(el) {
+    const v = parseFloat(el.value);
+    return isNaN(v) ? 0 : v;
+  }
+
+  function collectActivities() {
+    const rows = document.querySelectorAll("#activitiesWrap .activity-row");
+    const activities = [];
+    rows.forEach((row, i) => {
+      const activity = row.querySelector(".act-activity").value.trim();
+      const baseline2019 = num(row.querySelector(".act-baseline"));
+      const actual2018 = num(row.querySelector(".act-actual2018"));
+      const target2019 = num(row.querySelector(".act-target"));
+      const q1 = num(row.querySelector(".act-q1"));
+      const q2 = num(row.querySelector(".act-q2"));
+      const q3 = num(row.querySelector(".act-q3"));
+      const q4 = num(row.querySelector(".act-q4"));
+      const remarks = row.querySelector(".act-remarks").value.trim();
+      const totalActual = q1 + q2 + q3 + q4;
+      const percentage = target2019 > 0 ? Math.round((totalActual / target2019) * 1000) / 10 : 0;
+      if (activity) {
+        activities.push({
+          sn: i + 1, activity, baseline2019, actual2018, target2019,
+          q1, q2, q3, q4, totalActual, percentage, remarks
+        });
+      }
+    });
+    return activities;
+  }
+
+  // ---------- File ----------
+
   function readFileAsDataURL(file) {
     return new Promise((resolve, reject) => {
       const reader = new FileReader();
@@ -98,52 +196,61 @@
     });
   }
 
+  // ---------- Submit ----------
+
   document.getElementById("submitBtn").addEventListener("click", async () => {
     const department = document.getElementById("deptName").value.trim();
     const headName = document.getElementById("headName").value.trim();
-    const target = parseFloat(document.getElementById("target").value);
-    const actual = parseFloat(document.getElementById("actual").value);
     const repDate = document.getElementById("repDate").value;
     const file = document.getElementById("fileInput").files[0];
+    const activities = collectActivities();
 
     if (!department) { showMsg("Please type your department name.", false); return; }
     if (!headName) { showMsg("Please type your name.", false); return; }
-    if (isNaN(target) || target <= 0) { showMsg("Please enter a valid target number.", false); return; }
-    if (isNaN(actual) || actual < 0) { showMsg("Please enter a valid actual number.", false); return; }
     if (!repDate) { showMsg("Please choose a date.", false); return; }
-    if (!file) { showMsg("Please attach your report file.", false); return; }
-    if (file.size > 700 * 1024) { showMsg("That file is too big. Please keep it under 700 KB.", false); return; }
+    if (activities.length === 0) { showMsg("Please add at least one activity with a name.", false); return; }
+    if (file && file.size > 700 * 1024) { showMsg("That file is too big. Please keep it under 700 KB.", false); return; }
 
     document.getElementById("submitBtn").disabled = true;
     showMsg("Submitting, please wait...", true);
 
     try {
-      const percentage = Math.round((actual / target) * 1000) / 10;
-      const fileURL = await readFileAsDataURL(file);
+      const target = activities.reduce((s, a) => s + a.target2019, 0);
+      const actual = activities.reduce((s, a) => s + a.totalActual, 0);
+      const percentage = target > 0 ? Math.round((actual / target) * 1000) / 10 : 0;
 
-      await addDoc(collection(db, "reports"), {
+      const docData = {
         department,
         headName,
         headUid: currentUser.uid,
         target, actual, percentage,
         date: repDate,
-        fileURL,
-        fileName: file.name,
+        activities,
         createdAt: serverTimestamp()
-      });
+      };
+
+      if (file) {
+        docData.fileURL = await readFileAsDataURL(file);
+        docData.fileName = file.name;
+      }
+
+      await addDoc(collection(db, "reports"), docData);
 
       showMsg("Report submitted successfully.", true);
       document.getElementById("deptName").value = "";
       document.getElementById("headName").value = "";
-      document.getElementById("target").value = "";
-      document.getElementById("actual").value = "";
       document.getElementById("repDate").value = "";
       document.getElementById("fileInput").value = "";
+      document.getElementById("activitiesWrap").innerHTML = "";
+      rowCount = 0;
+      addActivityRow();
     } catch (err) {
       showMsg("Submit failed: " + err.message, false);
     }
     document.getElementById("submitBtn").disabled = false;
   });
+
+  // ---------- Recent submissions ----------
 
   function pillClass(pct) {
     if (pct >= 90) return "good";
@@ -156,7 +263,7 @@
     if (["doc", "docx"].includes(ext)) return { label: "Word", cls: "word" };
     if (["xls", "xlsx"].includes(ext)) return { label: "Excel", cls: "excel" };
     if (ext === "pdf") return { label: "PDF", cls: "pdf" };
-    return { label: "File", cls: "generic" };
+    return { label: "—", cls: "generic" };
   }
 
   function listenToRecentSubmissions() {
@@ -169,6 +276,9 @@
         const r = d.data();
         const kind = fileKind(r.fileName);
         const tr = document.createElement("tr");
+        const fileCell = r.fileURL
+          ? `<a class="file-btn ${kind.cls}" href="${r.fileURL}" download="${r.fileName || 'report'}">${kind.label}</a>`
+          : `<span class="hint">—</span>`;
         tr.innerHTML = `
           <td>${r.department}</td>
           <td>${r.headName}</td>
@@ -176,7 +286,7 @@
           <td>${r.target}</td>
           <td>${r.actual}</td>
           <td><span class="pill ${pillClass(r.percentage)}">${r.percentage}%</span></td>
-          <td><a class="file-btn ${kind.cls}" href="${r.fileURL}" download="${r.fileName || 'report'}">${kind.label}</a></td>
+          <td>${fileCell}</td>
         `;
         body.appendChild(tr);
       });

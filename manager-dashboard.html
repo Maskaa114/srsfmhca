@@ -129,9 +129,13 @@
     body.innerHTML = "";
     const rows = filterDept ? allReports.filter(r => r.department === filterDept) : allReports;
     document.getElementById("emptyMsg").style.display = rows.length === 0 ? "block" : "none";
-    rows.forEach((r) => {
+    rows.forEach((r, i) => {
       const tr = document.createElement("tr");
       const kind = fileKind(r.fileName);
+      const fileCell = r.fileURL
+        ? `<a class="file-btn ${kind.cls}" href="${r.fileURL}" download="${r.fileName || 'report'}">${kind.label} — download</a>`
+        : `<span class="hint">—</span>`;
+      const hasActivities = Array.isArray(r.activities) && r.activities.length > 0;
       tr.innerHTML = `
         <td>${r.department}</td>
         <td>${r.headName}</td>
@@ -139,10 +143,67 @@
         <td>${r.target}</td>
         <td>${r.actual}</td>
         <td><span class="pill ${pillClass(r.percentage)}">${r.percentage}%</span></td>
-        <td><a class="file-btn ${kind.cls}" href="${r.fileURL}" download="${r.fileName || 'report'}">${kind.label} — download</a></td>
+        <td>
+          ${fileCell}
+          ${hasActivities ? `<button type="button" class="detail-toggle-btn" data-idx="${i}" data-filter="${filterDept || ''}">View details</button>` : ""}
+        </td>
       `;
       body.appendChild(tr);
+
+      if (hasActivities) {
+        const detailTr = document.createElement("tr");
+        detailTr.className = "detail-row";
+        detailTr.style.display = "none";
+        detailTr.dataset.idx = i;
+        detailTr.dataset.filter = filterDept || "";
+        detailTr.innerHTML = `<td colspan="7">${buildActivityTable(r.activities)}</td>`;
+        body.appendChild(detailTr);
+      }
     });
+
+    body.querySelectorAll(".detail-toggle-btn").forEach((btn) => {
+      btn.addEventListener("click", () => {
+        const idx = btn.dataset.idx;
+        const detailRow = body.querySelector(`.detail-row[data-idx="${idx}"]`);
+        if (detailRow) {
+          const showing = detailRow.style.display !== "none";
+          detailRow.style.display = showing ? "none" : "table-row";
+          btn.textContent = showing ? "View details" : "Hide details";
+        }
+      });
+    });
+  }
+
+  function buildActivityTable(activities) {
+    const rows = activities.map(a => `
+      <tr>
+        <td>${a.sn}</td>
+        <td>${a.activity}</td>
+        <td>${a.baseline2019}</td>
+        <td>${a.actual2018}</td>
+        <td>${a.target2019}</td>
+        <td>${a.q1}</td>
+        <td>${a.q2}</td>
+        <td>${a.q3}</td>
+        <td>${a.q4}</td>
+        <td>${a.totalActual}</td>
+        <td><span class="pill ${pillClass(a.percentage)}">${a.percentage}%</span></td>
+        <td>${a.remarks || ""}</td>
+      </tr>
+    `).join("");
+    return `
+      <div class="activity-detail-wrap">
+        <table class="activity-detail-table">
+          <thead>
+            <tr>
+              <th>SN</th><th>Shaqada</th><th>S.M 2019</th><th>2018 Actual</th><th>Target 2019</th>
+              <th>Q1</th><th>Q2</th><th>Q3</th><th>Q4</th><th>Total Actual</th><th>%</th><th>Faalo</th>
+            </tr>
+          </thead>
+          <tbody>${rows}</tbody>
+        </table>
+      </div>
+    `;
   }
 
   function latestByDepartment() {
