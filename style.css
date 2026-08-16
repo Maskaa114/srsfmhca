@@ -1,0 +1,192 @@
+:root {
+  --navy: #10243e;
+  --navy-light: #1c3a5e;
+  --teal: #1c8c7c;
+  --teal-light: #e6f4f1;
+  --amber: #d98e33;
+  --paper: #f7f8fa;
+  --card: #ffffff;
+  --line: #dfe4ea;
+  --text: #1b232c;
+  --text-soft: #5b6673;
+  --danger: #c0392b;
+  --radius: 10px;
+  --shadow: 0 1px 3px rgba(16, 36, 62, 0.08), 0 6px 18px rgba(16, 36, 62, 0.06);
+}
+
+* { box-sizing: border-box; }
+
+body {
+  margin: 0;
+  font-family: "Segoe UI", "Helvetica Neue", Arial, sans-serif;
+  background: var(--paper);
+  color: var(--text);
+}
+
+.topbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  background: var(--navy);
+  color: #fff;
+  padding: 14px 24px;
+}
+
+.topbar .brand {
+  font-weight: 700;
+  letter-spacing: 0.3px;
+  font-size: 17px;
+}
+
+.topbar .who {
+  font-size: 14px;
+  opacity: 0.85;
+  margin-right: 14px;
+}
+
+.topbar button {
+  background: transparent;
+  border: 1px solid rgba(255,255,255,0.4);
+  color: #fff;
+  padding: 7px 14px;
+  border-radius: 6px;
+  cursor: pointer;
+  font-size: 13px;
+}
+.topbar button:hover { background: rgba(255,255,255,0.12); }
+
+.wrap {
+  max-width: 1100px;
+  margin: 0 auto;
+  padding: 28px 20px 60px;
+}
+
+.card {
+  background: var(--card);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow);
+  padding: 22px;
+  margin-bottom: 22px;
+}
+
+h1 { font-size: 22px; margin: 0 0 6px; }
+h2 { font-size: 17px; margin: 0 0 14px; color: var(--navy); }
+p.hint { color: var(--text-soft); font-size: 13.5px; margin-top: -2px; }
+
+label {
+  display: block;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--navy-light);
+  margin: 14px 0 6px;
+}
+
+input[type="text"],
+input[type="number"],
+input[type="date"],
+input[type="email"],
+input[type="password"],
+input[type="file"],
+select {
+  width: 100%;
+  padding: 10px 12px;
+  border: 1px solid var(--line);
+  border-radius: 7px;
+  font-size: 14px;
+  background: #fff;
+  color: var(--text);
+}
+input:focus, select:focus {
+  outline: 2px solid var(--teal);
+  outline-offset: 1px;
+}
+
+.btn {
+  display: inline-block;
+  margin-top: 18px;
+  background: var(--teal);
+  color: #fff;
+  border: none;
+  padding: 11px 20px;
+  border-radius: 7px;
+  font-size: 14.5px;
+  font-weight: 600;
+  cursor: pointer;
+}
+.btn:hover { background: #157567; }
+.btn:disabled { background: #9db3ae; cursor: not-allowed; }
+
+.msg {
+  margin-top: 12px;
+  padding: 10px 12px;
+  border-radius: 7px;
+  font-size: 13.5px;
+  display: none;
+}
+.msg.error { background: #fbeae8; color: var(--danger); border: 1px solid #f1c3bd; display: block; }
+.msg.ok { background: var(--teal-light); color: #0d5c50; border: 1px solid #b6e2da; display: block; }
+
+table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 13.5px;
+}
+th, td {
+  text-align: left;
+  padding: 10px 10px;
+  border-bottom: 1px solid var(--line);
+}
+th {
+  color: var(--text-soft);
+  font-weight: 600;
+  font-size: 12px;
+  text-transform: uppercase;
+  letter-spacing: 0.4px;
+}
+
+.pill {
+  display: inline-block;
+  padding: 3px 10px;
+  border-radius: 999px;
+  font-size: 12px;
+  font-weight: 700;
+}
+.pill.good { background: #e3f4e8; color: #1e7a3e; }
+.pill.mid  { background: #fdf1de; color: #9a6412; }
+.pill.low  { background: #fbeae8; color: var(--danger); }
+
+.login-shell {
+  min-height: 100vh;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: linear-gradient(160deg, var(--navy) 0%, var(--navy-light) 55%, var(--teal) 130%);
+}
+.login-box {
+  width: 100%;
+  max-width: 380px;
+  background: #fff;
+  border-radius: 14px;
+  padding: 34px 30px;
+  box-shadow: 0 20px 60px rgba(0,0,0,0.35);
+}
+.login-box .eyebrow {
+  font-size: 12px;
+  letter-spacing: 1.5px;
+  text-transform: uppercase;
+  color: var(--teal);
+  font-weight: 700;
+  margin-bottom: 6px;
+}
+.login-box h1 { margin-bottom: 4px; }
+.login-box p.hint { margin-bottom: 18px; }
+
+a.link { color: var(--teal); text-decoration: none; font-size: 13px; }
+
+.empty {
+  text-align: center;
+  padding: 30px 10px;
+  color: var(--text-soft);
+  font-size: 14px;
+}

@@ -1,0 +1,81 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>SRSFMHCA | Performance Portal</title>
+<link rel="stylesheet" href="style.css" />
+</head>
+<body>
+
+<div class="login-shell">
+  <div class="login-box">
+    <div class="eyebrow">SRSFMHCA</div>
+    <h1>Performance Portal</h1>
+    <p class="hint">Sign in with the account your manager gave you.</p>
+
+    <label for="email">Email</label>
+    <input type="email" id="email" placeholder="you@srsfmhca.org.et" />
+
+    <label for="password">Password</label>
+    <input type="password" id="password" placeholder="Your password" />
+
+    <button class="btn" id="loginBtn" style="width:100%;">Sign in</button>
+    <div class="msg" id="msg"></div>
+  </div>
+</div>
+
+<script type="module">
+  import {
+    auth, db,
+    signInWithEmailAndPassword,
+    onAuthStateChanged,
+    doc, getDoc
+  } from "./firebase-init.js";
+
+  const msg = document.getElementById("msg");
+
+  function showError(text) {
+    msg.className = "msg error";
+    msg.textContent = text;
+  }
+
+  async function goToRightPage(uid) {
+    const userDoc = await getDoc(doc(db, "users", uid));
+    if (!userDoc.exists()) {
+      showError("Your account has no role yet. Ask the manager to set it up in Firestore.");
+      return;
+    }
+    const role = userDoc.data().role;
+    if (role === "manager") {
+      window.location.href = "manager-dashboard.html";
+    } else if (role === "head") {
+      window.location.href = "head-dashboard.html";
+    } else {
+      showError("Unknown role: " + role);
+    }
+  }
+
+  document.getElementById("loginBtn").addEventListener("click", async () => {
+    const email = document.getElementById("email").value.trim();
+    const password = document.getElementById("password").value;
+    if (!email || !password) {
+      showError("Please type your email and password.");
+      return;
+    }
+    try {
+      const cred = await signInWithEmailAndPassword(auth, email, password);
+      await goToRightPage(cred.user.uid);
+    } catch (err) {
+      showError("Sign in failed: " + err.message);
+    }
+  });
+
+  // If already logged in, skip straight to the right dashboard
+  onAuthStateChanged(auth, (user) => {
+    if (user) goToRightPage(user.uid);
+  });
+</script>
+
+</body>
+</html>

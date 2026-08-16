@@ -1,0 +1,30 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    function isSignedIn() {
+      return request.auth != null;
+    }
+
+    function myRole() {
+      return get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role;
+    }
+
+    // Each user can read their own profile. Only the account itself may
+    // create it (the manager sets these up once per person, see README).
+    match /users/{uid} {
+      allow read: if isSignedIn() && request.auth.uid == uid;
+      allow write: if isSignedIn() && request.auth.uid == uid;
+    }
+
+    // Reports: a head can create their own reports and read their own.
+    // The manager can read everything.
+    match /reports/{reportId} {
+      allow create: if isSignedIn() && request.resource.data.headUid == request.auth.uid;
+      allow read: if isSignedIn() && (
+        resource.data.headUid == request.auth.uid || myRole() == "manager"
+      );
+      allow update, delete: if isSignedIn() && myRole() == "manager";
+    }
+  }
+}

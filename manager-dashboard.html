@@ -1,0 +1,152 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Manager Dashboard | SRSFMHCA</title>
+<link rel="stylesheet" href="style.css" />
+<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.4/chart.umd.min.js"></script>
+</head>
+<body>
+
+<div class="topbar">
+  <div class="brand">SRSFMHCA Performance Portal</div>
+  <div>
+    <span class="who" id="whoLabel">Manager</span>
+    <button id="logoutBtn">Log out</button>
+  </div>
+</div>
+
+<div class="wrap">
+
+  <div class="card">
+    <h2>Performance by department (latest submission each)</h2>
+    <p class="hint">This graph updates by itself every time a department head submits a new report.</p>
+    <canvas id="chart" height="90"></canvas>
+  </div>
+
+  <div class="card">
+    <h2>All submitted reports</h2>
+    <label for="deptFilter" style="margin-top:0;">Filter by department</label>
+    <select id="deptFilter"><option value="">All departments</option></select>
+    <table style="margin-top:16px;">
+      <thead>
+        <tr><th>Department</th><th>Head</th><th>Date</th><th>Target</th><th>Actual</th><th>%</th><th>File</th></tr>
+      </thead>
+      <tbody id="allTableBody"></tbody>
+    </table>
+    <div class="empty" id="emptyMsg" style="display:none;">No reports submitted yet.</div>
+  </div>
+
+</div>
+
+<script type="module">
+  import {
+    auth, db,
+    onAuthStateChanged, signOut,
+    doc, getDoc,
+    collection, orderBy, query, onSnapshot
+  } from "./firebase-init.js";
+
+  onAuthStateChanged(auth, async (user) => {
+    if (!user) { window.location.href = "index.html"; return; }
+    const userDoc = await getDoc(doc(db, "users", user.uid));
+    if (!userDoc.exists() || userDoc.data().role !== "manager") {
+      window.location.href = "index.html";
+      return;
+    }
+    document.getElementById("whoLabel").textContent = userDoc.data().name || user.email;
+    listenToAllReports();
+  });
+
+  document.getElementById("logoutBtn").addEventListener("click", () => signOut(auth));
+
+  function pillClass(pct) {
+    if (pct >= 90) return "good";
+    if (pct >= 60) return "mid";
+    return "low";
+  }
+
+  let chart = null;
+  let allReports = [];
+
+  function renderTable(filterDept) {
+    const body = document.getElementById("allTableBody");
+    body.innerHTML = "";
+    const rows = filterDept ? allReports.filter(r => r.department === filterDept) : allReports;
+    document.getElementById("emptyMsg").style.display = rows.length === 0 ? "block" : "none";
+    rows.forEach((r) => {
+      const tr = document.createElement("tr");
+      tr.innerHTML = `
+        <td>${r.department}</td>
+        <td>${r.headName}</td>
+        <td>${r.date}</td>
+        <td>${r.target}</td>
+        <td>${r.actual}</td>
+        <td><span class="pill ${pillClass(r.percentage)}">${r.percentage}%</span></td>
+        <td><a class="link" href="${r.fileURL}" target="_blank">Open file</a></td>
+      `;
+      body.appendChild(tr);
+    });
+  }
+
+  function renderChart() {
+    // one bar per department, using each department's most recent report
+    const latestByDept = {};
+    allReports.forEach((r) => {
+      if (!latestByDept[r.department]) latestByDept[r.department] = r;
+    });
+    const labels = Object.keys(latestByDept);
+    const values = labels.map((d) => latestByDept[d].percentage);
+    const colors = values.map((v) => v >= 90 ? "#1e7a3e" : v >= 60 ? "#d98e33" : "#c0392b");
+
+    const ctx = document.getElementById("chart").getContext("2d");
+    if (chart) chart.destroy();
+    chart = new Chart(ctx, {
+      type: "bar",
+      data: {
+        labels,
+        datasets: [{
+          label: "% of target achieved",
+          data: values,
+          backgroundColor: colors,
+          borderRadius: 6
+        }]
+      },
+      options: {
+        plugins: { legend: { display: false } },
+        scales: { y: { beginAtZero: true, ticks: { callback: (v) => v + "%" } } }
+      }
+    });
+  }
+
+  function fillDeptFilter() {
+    const select = document.getElementById("deptFilter");
+    const existing = new Set(Array.from(select.options).map(o => o.value));
+    const depts = [...new Set(allReports.map(r => r.department))];
+    depts.forEach((d) => {
+      if (!existing.has(d)) {
+        const opt = document.createElement("option");
+        opt.value = d; opt.textContent = d;
+        select.appendChild(opt);
+      }
+    });
+  }
+
+  document.getElementById("deptFilter").addEventListener("change", (e) => {
+    renderTable(e.target.value);
+  });
+
+  function listenToAllReports() {
+    const q = query(collection(db, "reports"), orderBy("createdAt", "desc"));
+    onSnapshot(q, (snap) => {
+      allReports = snap.docs.map(d => d.data());
+      fillDeptFilter();
+      renderTable(document.getElementById("deptFilter").value);
+      renderChart();
+    });
+  }
+</script>
+
+</body>
+</html>
