@@ -17,13 +17,12 @@ service cloud.firestore {
       allow write: if isSignedIn() && request.auth.uid == uid;
     }
 
-    // Reports: a head can create their own reports and read their own.
+    // Reports: any signed-in head can create a report, and read the
+    // recent list (since one shared account is used by all heads).
     // The manager can read everything.
     match /reports/{reportId} {
       allow create: if isSignedIn() && request.resource.data.headUid == request.auth.uid;
-      allow read: if isSignedIn() && (
-        resource.data.headUid == request.auth.uid || myRole() == "manager"
-      );
+      allow read: if isSignedIn();
       allow update, delete: if isSignedIn() && myRole() == "manager";
     }
   }
