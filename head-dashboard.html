@@ -20,13 +20,8 @@
 
   <div class="card">
     <h2>Submit your performance report</h2>
-    <p class="hint">Fill in your department and date, then add each activity (SN, Activity, S.M 2019, 2018 actual, 2019 target, and the four quarters). The overall percentage is calculated for you automatically from these numbers.</p>
-
-    <label for="deptName">Your department</label>
-    <input type="text" id="deptName" placeholder="e.g. Finance, HR, Health Services" />
-
-    <label for="headName">Your name</label>
-    <input type="text" id="headName" placeholder="e.g. Faadumo Ali" />
+    <p class="hint">Department: <strong id="deptDisplay">–</strong></p>
+    <p class="hint">Fill in the date, then add each activity (SN, Activity, S.M 2019, 2018 actual, 2019 target, and the four quarters). The overall percentage is calculated for you automatically from these numbers.</p>
 
     <label for="repDate">Report date</label>
     <input type="date" id="repDate" />
@@ -45,7 +40,7 @@
 
   <div class="card">
     <h2>Recent submissions</h2>
-    <p class="hint">The last reports sent from this account, from any department.</p>
+    <p class="hint">The last reports sent from your department.</p>
     <table id="myTable">
       <thead>
         <tr><th>Department</th><th>Head</th><th>Date</th><th>Target</th><th>Actual</th><th>%</th><th>File</th></tr>
@@ -62,11 +57,13 @@
     auth, db,
     onAuthStateChanged, signOut,
     doc, getDoc, addDoc, collection,
-    query, orderBy, limit, onSnapshot, serverTimestamp
+    query, where, orderBy, limit, onSnapshot, serverTimestamp
   } from "./firebase-init.js";
 
   const msg = document.getElementById("msg");
   let currentUser = null;
+  let myDepartment = "";
+  let myName = "";
   let rowCount = 0;
 
   function showMsg(text, ok) {
@@ -82,7 +79,10 @@
       return;
     }
     currentUser = user;
-    document.getElementById("whoLabel").textContent = userDoc.data().name || "Department Heads";
+    myDepartment = userDoc.data().department || "";
+    myName = userDoc.data().name || "";
+    document.getElementById("whoLabel").textContent = myName || "Department Head";
+    document.getElementById("deptDisplay").textContent = myDepartment || "—";
     listenToRecentSubmissions();
   });
 
@@ -199,14 +199,11 @@
   // ---------- Submit ----------
 
   document.getElementById("submitBtn").addEventListener("click", async () => {
-    const department = document.getElementById("deptName").value.trim();
-    const headName = document.getElementById("headName").value.trim();
     const repDate = document.getElementById("repDate").value;
     const file = document.getElementById("fileInput").files[0];
     const activities = collectActivities();
 
-    if (!department) { showMsg("Please type your department name.", false); return; }
-    if (!headName) { showMsg("Please type your name.", false); return; }
+    if (!myDepartment) { showMsg("Your account has no department set. Ask the manager to fix your account.", false); return; }
     if (!repDate) { showMsg("Please choose a date.", false); return; }
     if (activities.length === 0) { showMsg("Please add at least one activity with a name.", false); return; }
     if (file && file.size > 700 * 1024) { showMsg("That file is too big. Please keep it under 700 KB.", false); return; }
@@ -220,8 +217,8 @@
       const percentage = target > 0 ? Math.round((actual / target) * 1000) / 10 : 0;
 
       const docData = {
-        department,
-        headName,
+        department: myDepartment,
+        headName: myName,
         headUid: currentUser.uid,
         target, actual, percentage,
         date: repDate,
@@ -237,8 +234,6 @@
       await addDoc(collection(db, "reports"), docData);
 
       showMsg("Report submitted successfully.", true);
-      document.getElementById("deptName").value = "";
-      document.getElementById("headName").value = "";
       document.getElementById("repDate").value = "";
       document.getElementById("fileInput").value = "";
       document.getElementById("activitiesWrap").innerHTML = "";
@@ -267,7 +262,12 @@
   }
 
   function listenToRecentSubmissions() {
-    const q = query(collection(db, "reports"), orderBy("createdAt", "desc"), limit(20));
+    const q = query(
+      collection(db, "reports"),
+      where("department", "==", myDepartment),
+      orderBy("createdAt", "desc"),
+      limit(20)
+    );
     onSnapshot(q, (snap) => {
       const body = document.getElementById("myTableBody");
       body.innerHTML = "";

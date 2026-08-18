@@ -42,6 +42,12 @@
     </div>
   </div>
 
+  <div class="card">
+    <h2>Data interpretation</h2>
+    <p class="hint">A plain-language summary of everything below, across all departments.</p>
+    <p id="interpretationText">–</p>
+  </div>
+
   <div class="two-col">
     <div class="card">
       <h2>Performance by department (latest submission each)</h2>
@@ -71,6 +77,34 @@
   </div>
 
   <div class="card">
+    <h2>Staff accounts</h2>
+    <p class="hint">Create a sign-in for a department head. Share the email and password with them directly — this system has no email delivery.</p>
+
+    <label for="staffName">Full name</label>
+    <input type="text" id="staffName" placeholder="e.g. Faadumo Ali" />
+
+    <label for="staffDept">Department</label>
+    <input type="text" id="staffDept" placeholder="e.g. Finance, HR, Health Services" />
+
+    <label for="staffUsername">Username</label>
+    <input type="text" id="staffUsername" placeholder="e.g. finance-head" />
+
+    <label for="staffPassword">Temporary password</label>
+    <input type="text" id="staffPassword" placeholder="At least 6 characters" />
+
+    <button class="btn" id="createStaffBtn" style="margin-top:14px;">Create staff account</button>
+    <div class="msg" id="staffCreateStatus"></div>
+
+    <table style="margin-top:20px;">
+      <thead>
+        <tr><th>Name</th><th>Department</th><th></th></tr>
+      </thead>
+      <tbody id="staffTableBody"></tbody>
+    </table>
+    <div class="empty" id="staffEmptyMsg" style="display:none;">No department head accounts yet.</div>
+  </div>
+
+  <div class="card">
     <h2>All submitted reports</h2>
     <label for="deptFilter" style="margin-top:0;">Filter by department</label>
     <select id="deptFilter"><option value="">All departments</option></select>
@@ -81,16 +115,25 @@
       <tbody id="allTableBody"></tbody>
     </table>
     <div class="empty" id="emptyMsg" style="display:none;">No reports submitted yet.</div>
+
+    <button class="btn danger-btn" id="deleteAllBtn" style="margin-top:20px;">Delete all reports</button>
+    <div class="msg" id="deleteAllStatus"></div>
   </div>
 
 </div>
 
 <script type="module">
+  import { initializeApp, deleteApp } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js";
   import {
-    auth, db,
+    getAuth,
+    createUserWithEmailAndPassword,
+    signOut as secondarySignOut
+  } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js";
+  import {
+    auth, db, firebaseConfig,
     onAuthStateChanged, signOut,
-    doc, getDoc,
-    collection, orderBy, query, onSnapshot
+    doc, getDoc, setDoc,
+    collection, orderBy, query, where, onSnapshot, getDocs, deleteDoc
   } from "./firebase-init.js";
 
   onAuthStateChanged(auth, async (user) => {
@@ -102,6 +145,7 @@
     }
     document.getElementById("whoLabel").textContent = userDoc.data().name || user.email;
     listenToAllReports();
+    listenToStaffAccounts();
   });
 
   document.getElementById("logoutBtn").addEventListener("click", () => signOut(auth));
@@ -230,6 +274,33 @@
     document.getElementById("statLow").textContent = low;
   }
 
+  function renderInterpretation() {
+    const el = document.getElementById("interpretationText");
+    const latest = latestByDepartment();
+    const values = Object.values(latest);
+
+    if (values.length === 0) {
+      el.textContent = "No reports have been submitted yet, so there is nothing to interpret.";
+      return;
+    }
+
+    const avg = Math.round((values.reduce((s, r) => s + r.percentage, 0) / values.length) * 10) / 10;
+    const sorted = [...values].sort((a, b) => b.percentage - a.percentage);
+    const best = sorted[0];
+    const worst = sorted[sorted.length - 1];
+    const good = values.filter(r => r.percentage >= 90).length;
+    const mid = values.filter(r => r.percentage >= 60 && r.percentage < 90).length;
+    const low = values.filter(r => r.percentage < 60).length;
+
+    let text = `Out of ${values.length} reporting department(s), the average achievement is ${avg}%. `;
+    text += `${good} department(s) are on target (90% or above), ${mid} are at risk (60–89%), and ${low} are behind (below 60%). `;
+    text += `${best.department} has the highest achievement, at ${best.percentage}%. `;
+    if (worst.department !== best.department) {
+      text += `${worst.department} has the lowest, at ${worst.percentage}%, and may need extra support or follow-up.`;
+    }
+    el.textContent = text;
+  }
+
   function renderRankLists() {
     const latest = latestByDepartment();
     const values = Object.values(latest).sort((a, b) => b.percentage - a.percentage);
@@ -344,9 +415,99 @@
     const q = query(collection(db, "reports"), orderBy("createdAt", "desc"));
     onSnapshot(q, (snap) => {
       allReports = snap.docs.map(d => d.data());
-      const steps = [fillDeptFilter, () => renderTable(document.getElementById("deptFilter").value), renderChart, renderStatusChart, renderStats, renderRankLists];
+      const steps = [fillDeptFilter, () => renderTable(document.getElementById("deptFilter").value), renderChart, renderStatusChart, renderStats, renderRankLists, renderInterpretation];
       steps.forEach((fn) => {
         try { fn(); } catch (err) { console.error(fn.name, err); }
+      });
+    });
+  }
+
+  // ---------- Delete all reports ----------
+
+  document.getElementById("deleteAllBtn").addEventListener("click", async () => {
+    const sure = confirm("This will permanently delete ALL reports from EVERY department. This cannot be undone. Continue?");
+    if (!sure) return;
+    const statusEl = document.getElementById("deleteAllStatus");
+    statusEl.textContent = "Deleting...";
+    try {
+      const snap = await getDocs(collection(db, "reports"));
+      await Promise.all(snap.docs.map((d) => deleteDoc(d.ref)));
+      statusEl.textContent = "All reports deleted.";
+    } catch (err) {
+      statusEl.textContent = "Could not delete: " + err.message;
+    }
+  });
+
+  // ---------- Staff accounts (manager only) ----------
+
+  document.getElementById("createStaffBtn").addEventListener("click", async () => {
+    const fullName = document.getElementById("staffName").value.trim();
+    const department = document.getElementById("staffDept").value.trim();
+    const username = document.getElementById("staffUsername").value.trim();
+    const tempPassword = document.getElementById("staffPassword").value;
+    const statusEl = document.getElementById("staffCreateStatus");
+
+    if (!fullName || !department || !username || !tempPassword) {
+      statusEl.textContent = "Please fill in every box.";
+      return;
+    }
+    if (tempPassword.length < 6) {
+      statusEl.textContent = "Password must be at least 6 characters.";
+      return;
+    }
+
+    const email = username.toLowerCase().replace(/\s+/g, "") + "@srsfmhca-portal.firebaseapp.com";
+    statusEl.textContent = "Creating account...";
+
+    // A second, temporary connection to Firebase so that creating this
+    // new account does not log the manager out of their own session.
+    const secondaryApp = initializeApp(firebaseConfig, "secondary-" + Date.now());
+    const secondaryAuth = getAuth(secondaryApp);
+
+    try {
+      const cred = await createUserWithEmailAndPassword(secondaryAuth, email, tempPassword);
+      await setDoc(doc(db, "users", cred.user.uid), {
+        role: "head",
+        name: fullName,
+        department: department
+      });
+      await secondarySignOut(secondaryAuth);
+      await deleteApp(secondaryApp);
+
+      statusEl.innerHTML = `Account created. Give the department head this login:<br>
+        <strong>Email:</strong> ${email}<br>
+        <strong>Password:</strong> ${tempPassword}`;
+      document.getElementById("staffName").value = "";
+      document.getElementById("staffDept").value = "";
+      document.getElementById("staffUsername").value = "";
+      document.getElementById("staffPassword").value = "";
+    } catch (err) {
+      statusEl.textContent = "Could not create account: " + err.message;
+      try { await deleteApp(secondaryApp); } catch (e) {}
+    }
+  });
+
+  function listenToStaffAccounts() {
+    const q = query(collection(db, "users"), where("role", "==", "head"));
+    onSnapshot(q, (snap) => {
+      const body = document.getElementById("staffTableBody");
+      body.innerHTML = "";
+      document.getElementById("staffEmptyMsg").style.display = snap.empty ? "block" : "none";
+      snap.forEach((d) => {
+        const u = d.data();
+        const tr = document.createElement("tr");
+        tr.innerHTML = `
+          <td>${u.name || "—"}</td>
+          <td>${u.department || "—"}</td>
+          <td><button type="button" class="revoke-btn" data-uid="${d.id}">Revoke access</button></td>
+        `;
+        body.appendChild(tr);
+      });
+      body.querySelectorAll(".revoke-btn").forEach((btn) => {
+        btn.addEventListener("click", async () => {
+          if (!confirm("Remove this department head's access to the portal?")) return;
+          await deleteDoc(doc(db, "users", btn.dataset.uid));
+        });
       });
     });
   }

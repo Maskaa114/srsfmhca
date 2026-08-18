@@ -1,29 +1,44 @@
 rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
-
     function isSignedIn() {
       return request.auth != null;
     }
-
     function myRole() {
       return get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role;
     }
-
-    // Each user can read their own profile. Only the account itself may
-    // create it (the manager sets these up once per person, see README).
-    match /users/{uid} {
-      allow read: if isSignedIn() && request.auth.uid == uid;
-      allow write: if isSignedIn() && request.auth.uid == uid;
+    function myDepartment() {
+      return get(/databases/$(database)/documents/users/$(request.auth.uid)).data.department;
+    }
+    function isManager() {
+      return isSignedIn() && myRole() == "manager";
     }
 
-    // Reports: any signed-in head can create a report, and read the
-    // recent list (since one shared account is used by all heads).
-    // The manager can read everything.
+    // User profiles (accounts). Only the manager can create or remove
+    // an account. A signed-in person can read their own profile, and
+    // can update small details about it, but cannot change their own
+    // role or department — only the manager can do that.
+    match /users/{uid} {
+      allow read: if isSignedIn() && (request.auth.uid == uid || isManager());
+      allow create, delete: if isManager();
+      allow update: if isManager() ||
+        (isSignedIn() && request.auth.uid == uid &&
+         request.resource.data.role == resource.data.role &&
+         request.resource.data.department == resource.data.department);
+    }
+
+    // Reports: a department head may create a report only for their
+    // own department. A department head may only read reports that
+    // belong to their own department. The manager can read every
+    // report, and is the only one who can update or delete reports
+    // (including deleting all of them).
     match /reports/{reportId} {
-      allow create: if isSignedIn() && request.resource.data.headUid == request.auth.uid;
-      allow read: if isSignedIn();
-      allow update, delete: if isSignedIn() && myRole() == "manager";
+      allow create: if isSignedIn() &&
+        request.resource.data.headUid == request.auth.uid &&
+        request.resource.data.department == myDepartment();
+      allow read: if isSignedIn() &&
+        (isManager() || resource.data.department == myDepartment());
+      allow update, delete: if isManager();
     }
   }
 }
