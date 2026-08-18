@@ -1,0 +1,300 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Submit Report | SRSFMHCA</title>
+<link rel="stylesheet" href="style.css" />
+</head>
+<body>
+
+<div class="topbar">
+  <div class="brand">SRSFMHCA Performance Portal</div>
+  <div>
+    <span class="who" id="whoLabel">Loading...</span>
+    <button id="logoutBtn">Log out</button>
+  </div>
+</div>
+
+<div class="wrap">
+
+  <div class="card">
+    <h2>Submit your performance report</h2>
+    <p class="hint">Department: <strong id="deptDisplay">–</strong></p>
+    <p class="hint">Fill in the date, then add each activity (SN, Activity, S.M 2019, 2018 actual, 2019 target, and the four quarters). The overall percentage is calculated for you automatically from these numbers.</p>
+
+    <label for="repDate">Report date</label>
+    <input type="date" id="repDate" />
+    <p class="hint" style="margin-top:6px;">Submit one report every month. The manager's dashboard automatically keeps your monthly reports and combines every 4 of them into a quarterly report.</p>
+
+    <h2 style="margin-top:26px;">Activities (Shaqooyinka Laqabanayo)</h2>
+    <div id="activitiesWrap"></div>
+    <button type="button" class="btn secondary-btn" id="addRowBtn">+ Add activity</button>
+
+    <label for="fileInput" style="margin-top:22px;">Attach file (optional — Word, Excel, or PDF)</label>
+    <input type="file" id="fileInput" accept=".doc,.docx,.xls,.xlsx,.pdf" />
+    <p class="hint">Keep the file under 700 KB (a text-based Word/Excel report is normally fine).</p>
+
+    <button class="btn" id="submitBtn">Submit report</button>
+    <div class="msg" id="msg"></div>
+  </div>
+
+  <div class="card">
+    <h2>Recent submissions</h2>
+    <p class="hint">The last reports sent from your department.</p>
+    <table id="myTable">
+      <thead>
+        <tr><th>Department</th><th>Head</th><th>Date</th><th>Target</th><th>Actual</th><th>%</th><th>File</th></tr>
+      </thead>
+      <tbody id="myTableBody"></tbody>
+    </table>
+    <div class="empty" id="emptyMsg" style="display:none;">No submissions yet.</div>
+  </div>
+
+</div>
+
+<script type="module">
+  import {
+    auth, db,
+    onAuthStateChanged, signOut,
+    doc, getDoc, addDoc, collection,
+    query, where, orderBy, limit, onSnapshot, serverTimestamp
+  } from "./firebase-init.js";
+
+  const msg = document.getElementById("msg");
+  let currentUser = null;
+  let myDepartment = "";
+  let myName = "";
+  let rowCount = 0;
+
+  function showMsg(text, ok) {
+    msg.className = ok ? "msg ok" : "msg error";
+    msg.textContent = text;
+  }
+
+  onAuthStateChanged(auth, async (user) => {
+    if (!user) { window.location.href = "index.html"; return; }
+    const userDoc = await getDoc(doc(db, "users", user.uid));
+    if (!userDoc.exists() || userDoc.data().role !== "head") {
+      window.location.href = "index.html";
+      return;
+    }
+    currentUser = user;
+    myDepartment = userDoc.data().department || "";
+    myName = userDoc.data().name || "";
+    document.getElementById("whoLabel").textContent = myName || "Department Head";
+    document.getElementById("deptDisplay").textContent = myDepartment || "—";
+    listenToRecentSubmissions();
+  });
+
+  document.getElementById("logoutBtn").addEventListener("click", () => signOut(auth));
+
+  // ---------- Activity rows ----------
+
+  function addActivityRow() {
+    rowCount++;
+    const wrap = document.getElementById("activitiesWrap");
+    const row = document.createElement("div");
+    row.className = "activity-row";
+    row.dataset.sn = rowCount;
+    row.innerHTML = `
+      <div class="activity-row-head">
+        <span class="activity-sn">SN ${rowCount}</span>
+        <button type="button" class="remove-row-btn">Remove</button>
+      </div>
+      <label>Shaqada / Activity</label>
+      <input type="text" class="act-activity" placeholder="e.g. Community health training" />
+
+      <div class="activity-grid">
+        <div>
+          <label>S.M 2019 (Baseline)</label>
+          <input type="number" class="act-baseline" placeholder="0" />
+        </div>
+        <div>
+          <label>Gun Dhiga 2018 (2018 actual)</label>
+          <input type="number" class="act-actual2018" placeholder="0" />
+        </div>
+        <div>
+          <label>Target 2019</label>
+          <input type="number" class="act-target" placeholder="0" />
+        </div>
+        <div>
+          <label>Rubuca 1aad (Q1)</label>
+          <input type="number" class="act-q1" placeholder="0" />
+        </div>
+        <div>
+          <label>Rubuca 2aad (Q2)</label>
+          <input type="number" class="act-q2" placeholder="0" />
+        </div>
+        <div>
+          <label>Rubuca 3aad (Q3)</label>
+          <input type="number" class="act-q3" placeholder="0" />
+        </div>
+        <div>
+          <label>Rubuca 4aad (Q4)</label>
+          <input type="number" class="act-q4" placeholder="0" />
+        </div>
+      </div>
+
+      <label>Faalo / Remarks</label>
+      <input type="text" class="act-remarks" placeholder="Optional notes" />
+    `;
+    row.querySelector(".remove-row-btn").addEventListener("click", () => {
+      row.remove();
+      renumberRows();
+    });
+    wrap.appendChild(row);
+  }
+
+  function renumberRows() {
+    const rows = document.querySelectorAll("#activitiesWrap .activity-row");
+    rows.forEach((row, i) => {
+      row.querySelector(".activity-sn").textContent = "SN " + (i + 1);
+    });
+  }
+
+  document.getElementById("addRowBtn").addEventListener("click", addActivityRow);
+  addActivityRow(); // start with one row
+
+  function num(el) {
+    const v = parseFloat(el.value);
+    return isNaN(v) ? 0 : v;
+  }
+
+  function collectActivities() {
+    const rows = document.querySelectorAll("#activitiesWrap .activity-row");
+    const activities = [];
+    rows.forEach((row, i) => {
+      const activity = row.querySelector(".act-activity").value.trim();
+      const baseline2019 = num(row.querySelector(".act-baseline"));
+      const actual2018 = num(row.querySelector(".act-actual2018"));
+      const target2019 = num(row.querySelector(".act-target"));
+      const q1 = num(row.querySelector(".act-q1"));
+      const q2 = num(row.querySelector(".act-q2"));
+      const q3 = num(row.querySelector(".act-q3"));
+      const q4 = num(row.querySelector(".act-q4"));
+      const remarks = row.querySelector(".act-remarks").value.trim();
+      const totalActual = q1 + q2 + q3 + q4;
+      const percentage = target2019 > 0 ? Math.round((totalActual / target2019) * 1000) / 10 : 0;
+      if (activity) {
+        activities.push({
+          sn: i + 1, activity, baseline2019, actual2018, target2019,
+          q1, q2, q3, q4, totalActual, percentage, remarks
+        });
+      }
+    });
+    return activities;
+  }
+
+  // ---------- File ----------
+
+  function readFileAsDataURL(file) {
+    return new Promise((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onload = () => resolve(reader.result);
+      reader.onerror = () => reject(reader.error);
+      reader.readAsDataURL(file);
+    });
+  }
+
+  // ---------- Submit ----------
+
+  document.getElementById("submitBtn").addEventListener("click", async () => {
+    const repDate = document.getElementById("repDate").value;
+    const file = document.getElementById("fileInput").files[0];
+    const activities = collectActivities();
+
+    if (!myDepartment) { showMsg("Your account has no department set. Ask the manager to fix your account.", false); return; }
+    if (!repDate) { showMsg("Please choose a date.", false); return; }
+    if (activities.length === 0) { showMsg("Please add at least one activity with a name.", false); return; }
+    if (file && file.size > 700 * 1024) { showMsg("That file is too big. Please keep it under 700 KB.", false); return; }
+
+    document.getElementById("submitBtn").disabled = true;
+    showMsg("Submitting, please wait...", true);
+
+    try {
+      const target = activities.reduce((s, a) => s + a.target2019, 0);
+      const actual = activities.reduce((s, a) => s + a.totalActual, 0);
+      const percentage = target > 0 ? Math.round((actual / target) * 1000) / 10 : 0;
+
+      const docData = {
+        department: myDepartment,
+        headName: myName,
+        headUid: currentUser.uid,
+        target, actual, percentage,
+        date: repDate,
+        reportMonth: repDate.slice(0, 7),
+        activities,
+        createdAt: serverTimestamp()
+      };
+
+      if (file) {
+        docData.fileURL = await readFileAsDataURL(file);
+        docData.fileName = file.name;
+      }
+
+      await addDoc(collection(db, "reports"), docData);
+
+      showMsg("Report submitted successfully.", true);
+      document.getElementById("repDate").value = "";
+      document.getElementById("fileInput").value = "";
+      document.getElementById("activitiesWrap").innerHTML = "";
+      rowCount = 0;
+      addActivityRow();
+    } catch (err) {
+      showMsg("Submit failed: " + err.message, false);
+    }
+    document.getElementById("submitBtn").disabled = false;
+  });
+
+  // ---------- Recent submissions ----------
+
+  function pillClass(pct) {
+    if (pct >= 90) return "good";
+    if (pct >= 60) return "mid";
+    return "low";
+  }
+
+  function fileKind(name) {
+    const ext = (name || "").split(".").pop().toLowerCase();
+    if (["doc", "docx"].includes(ext)) return { label: "Word", cls: "word" };
+    if (["xls", "xlsx"].includes(ext)) return { label: "Excel", cls: "excel" };
+    if (ext === "pdf") return { label: "PDF", cls: "pdf" };
+    return { label: "—", cls: "generic" };
+  }
+
+  function listenToRecentSubmissions() {
+    const q = query(
+      collection(db, "reports"),
+      where("department", "==", myDepartment),
+      orderBy("createdAt", "desc"),
+      limit(20)
+    );
+    onSnapshot(q, (snap) => {
+      const body = document.getElementById("myTableBody");
+      body.innerHTML = "";
+      document.getElementById("emptyMsg").style.display = snap.empty ? "block" : "none";
+      snap.forEach((d) => {
+        const r = d.data();
+        const kind = fileKind(r.fileName);
+        const tr = document.createElement("tr");
+        const fileCell = r.fileURL
+          ? `<a class="file-btn ${kind.cls}" href="${r.fileURL}" download="${r.fileName || 'report'}">${kind.label}</a>`
+          : `<span class="hint">—</span>`;
+        tr.innerHTML = `
+          <td>${r.department}</td>
+          <td>${r.headName}</td>
+          <td>${r.date}</td>
+          <td>${r.target}</td>
+          <td>${r.actual}</td>
+          <td><span class="pill ${pillClass(r.percentage)}">${r.percentage}%</span></td>
+          <td>${fileCell}</td>
+        `;
+        body.appendChild(tr);
+      });
+    });
+  }
+</script>
+
+</body>
+</html>
