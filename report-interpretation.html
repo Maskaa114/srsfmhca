@@ -1,0 +1,402 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Full Interpretation Report | SRSFMHCA</title>
+<link rel="stylesheet" href="style.css" />
+</head>
+<body>
+
+<div class="topbar">
+  <div class="brand">SRSFMHCA Performance Portal</div>
+  <div>
+    <a class="back-link" href="manager-dashboard.html">← Back to dashboard</a>
+    <span class="who" id="whoLabel">Manager</span>
+    <button id="logoutBtn">Log out</button>
+  </div>
+</div>
+
+<div class="wrap">
+
+  <div class="card interp-hero">
+    <h1>📋 Full Interpretation Report</h1>
+    <p>This page reads every report from every department and explains it in simple words: what is going well, what is not, what needs fixing right now, how departments compare, and what to do next. It updates by itself every time a new report comes in.</p>
+  </div>
+
+  <div class="card">
+    <h2>✅ 1. Strengths — What Each Department Is Doing Well</h2>
+    <p class="hint">Activities at 90% or more of their target, taken from each department's most recent report.</p>
+    <div id="strengthsWrap"></div>
+  </div>
+
+  <div class="card">
+    <h2>⚠️ 2. Weaknesses — What Needs Improvement</h2>
+    <p class="hint">Activities between 60% and 89% of their target. Not failing, but not yet on track.</p>
+    <div id="weaknessesWrap"></div>
+  </div>
+
+  <div class="card critical-card">
+    <h2>🚨 3. Critical Issues — Fix Immediately</h2>
+    <p class="hint">Activities below 60% of their target. The department at the top of this list needs help first.</p>
+    <div id="criticalWrap"></div>
+  </div>
+
+  <div class="card">
+    <h2>📊 4. Compare All Departments</h2>
+    <p class="hint">Every department's latest overall score, ranked from highest to lowest. 🟢 90%+ on target · 🟠 60–89% at risk · 🔴 below 60% critical.</p>
+    <div id="compareWrap"></div>
+  </div>
+
+  <div class="card">
+    <h2>💡 5. Recommendations</h2>
+    <p class="hint">Simple next steps, generated automatically from the numbers above.</p>
+    <div id="recommendWrap"></div>
+  </div>
+
+  <div class="card">
+    <h2>🗓️ 6. Monthly Reports</h2>
+    <p class="hint">Every report a department has ever sent, one chip per month, in order. This is the history the quarterly reports below are built from.</p>
+    <div id="monthlyWrap"></div>
+  </div>
+
+  <div class="card">
+    <h2>📦 7. Quarterly Reports (Auto-Built From Every 4 Monthly Reports)</h2>
+    <p class="hint">As soon as a department has sent 4 monthly reports, the system adds their numbers together and creates the next quarterly report by itself. No one has to do this by hand.</p>
+    <div id="quarterlyWrap"></div>
+  </div>
+
+</div>
+
+<script type="module">
+  import {
+    auth, db,
+    onAuthStateChanged, signOut,
+    doc, getDoc, collection, query, orderBy, onSnapshot
+  } from "./firebase-init.js";
+
+  onAuthStateChanged(auth, async (user) => {
+    if (!user) { window.location.href = "index.html"; return; }
+    const userDoc = await getDoc(doc(db, "users", user.uid));
+    if (!userDoc.exists() || userDoc.data().role !== "manager") {
+      window.location.href = "index.html";
+      return;
+    }
+    document.getElementById("whoLabel").textContent = userDoc.data().name || user.email;
+    listenToAllReports();
+  });
+
+  document.getElementById("logoutBtn").addEventListener("click", () => signOut(auth));
+
+  let allReports = [];
+
+  function listenToAllReports() {
+    const q = query(collection(db, "reports"), orderBy("createdAt", "desc"));
+    onSnapshot(q, (snap) => {
+      allReports = snap.docs.map((d) => d.data());
+      render();
+    });
+  }
+
+  // ---------- Small shared helpers ----------
+
+  function pillClass(pct) {
+    if (pct >= 90) return "good";
+    if (pct >= 60) return "mid";
+    return "low";
+  }
+
+  function barColor(pct) {
+    if (pct >= 90) return "#1e7a3e";
+    if (pct >= 60) return "#d98e33";
+    return "#c0392b";
+  }
+
+  function monthKeyOf(r) {
+    return r.reportMonth || (r.date ? r.date.slice(0, 7) : "unknown");
+  }
+
+  function monthLabel(key) {
+    if (!key || key === "unknown") return "Unknown month";
+    const [y, m] = key.split("-").map(Number);
+    if (!y || !m) return key;
+    return new Date(y, m - 1, 1).toLocaleString("en-US", { month: "long", year: "numeric" });
+  }
+
+  function departmentsInOrder() {
+    return [...new Set(allReports.map((r) => r.department))].sort((a, b) => a.localeCompare(b));
+  }
+
+  // Most recent report per department (allReports is already newest-first)
+  function latestByDepartment() {
+    const latest = {};
+    allReports.forEach((r) => { if (!latest[r.department]) latest[r.department] = r; });
+    return latest;
+  }
+
+  // Every report per department, oldest first (for monthly / quarterly history)
+  function ascendingByDepartment() {
+    const groups = {};
+    allReports.forEach((r) => {
+      if (!groups[r.department]) groups[r.department] = [];
+      groups[r.department].push(r);
+    });
+    Object.keys(groups).forEach((dept) => {
+      groups[dept].sort((a, b) => (a.date || "").localeCompare(b.date || ""));
+    });
+    return groups;
+  }
+
+  function categorize(report) {
+    const strengths = [], weaknesses = [], critical = [];
+    const list = (Array.isArray(report.activities) && report.activities.length)
+      ? report.activities
+      : [{ activity: "Overall performance", percentage: report.percentage }];
+    list.forEach((a) => {
+      if (a.percentage >= 90) strengths.push(a);
+      else if (a.percentage >= 60) weaknesses.push(a);
+      else critical.push(a);
+    });
+    return { strengths, weaknesses, critical };
+  }
+
+  function namesOf(items) {
+    return items.map((a) => a.activity).join(", ");
+  }
+
+  // ---------- Section 1 & 2: Strengths / Weaknesses ----------
+
+  function renderStrengthsWeaknesses(latest) {
+    const depts = departmentsInOrder();
+    const sWrap = document.getElementById("strengthsWrap");
+    const wWrap = document.getElementById("weaknessesWrap");
+    sWrap.innerHTML = "";
+    wWrap.innerHTML = "";
+
+    if (depts.length === 0) {
+      sWrap.innerHTML = '<div class="empty">No reports submitted yet.</div>';
+      wWrap.innerHTML = '<div class="empty">No reports submitted yet.</div>';
+      return;
+    }
+
+    depts.forEach((dept) => {
+      const report = latest[dept];
+      if (!report) return;
+      const { strengths, weaknesses } = categorize(report);
+
+      const sBlock = document.createElement("div");
+      sBlock.className = "dept-block strength";
+      sBlock.innerHTML = strengths.length
+        ? `<h3>${dept}</h3><p>Doing well at: <strong>${namesOf(strengths)}</strong>.</p>`
+        : `<h3>${dept}</h3><p>No activities at 90% or above yet.</p>`;
+      sWrap.appendChild(sBlock);
+
+      const wBlock = document.createElement("div");
+      wBlock.className = "dept-block weakness";
+      wBlock.innerHTML = weaknesses.length
+        ? `<h3>${dept}</h3><p>Needs improvement in: <strong>${namesOf(weaknesses)}</strong>.</p>`
+        : `<h3>${dept}</h3><p>Nothing sitting in the 60–89% range right now.</p>`;
+      wWrap.appendChild(wBlock);
+    });
+  }
+
+  // ---------- Section 3: Critical issues, most urgent first ----------
+
+  function renderCritical(latest) {
+    const wrap = document.getElementById("criticalWrap");
+    wrap.innerHTML = "";
+
+    const rows = [];
+    Object.keys(latest).forEach((dept) => {
+      const report = latest[dept];
+      const { critical } = categorize(report);
+      if (critical.length) {
+        const lowest = Math.min(...critical.map((a) => a.percentage));
+        rows.push({ dept, critical, lowest });
+      }
+    });
+
+    if (rows.length === 0) {
+      wrap.innerHTML = '<div class="empty">No critical issues right now. Every department is above 60% on every activity — great work.</div>';
+      return;
+    }
+
+    rows.sort((a, b) => a.lowest - b.lowest);
+    rows.forEach((row) => {
+      const block = document.createElement("div");
+      block.className = "dept-block critical";
+      const items = row.critical
+        .sort((a, b) => a.percentage - b.percentage)
+        .map((a) => `${a.activity} (${a.percentage}%)`)
+        .join(", ");
+      block.innerHTML = `<h3>${row.dept}</h3><p>Solve this immediately: <strong>${items}</strong>.</p>`;
+      wrap.appendChild(block);
+    });
+  }
+
+  // ---------- Section 4: Compare all departments ----------
+
+  function renderCompare(latest) {
+    const wrap = document.getElementById("compareWrap");
+    wrap.innerHTML = "";
+    const values = Object.values(latest).sort((a, b) => b.percentage - a.percentage);
+
+    if (values.length === 0) {
+      wrap.innerHTML = '<div class="empty">No reports submitted yet.</div>';
+      return;
+    }
+
+    const medals = ["🥇", "🥈", "🥉"];
+    values.forEach((r, i) => {
+      const row = document.createElement("div");
+      row.className = "compare-row";
+      row.innerHTML = `
+        <span class="compare-rank">${medals[i] || (i + 1)}</span>
+        <span class="compare-name">${r.department}</span>
+        <span class="compare-bar-wrap"><span class="compare-bar" style="width:${Math.min(r.percentage, 100)}%; background:${barColor(r.percentage)};"></span></span>
+        <span class="compare-pct"><span class="pill ${pillClass(r.percentage)}">${r.percentage}%</span></span>
+      `;
+      wrap.appendChild(row);
+    });
+  }
+
+  // ---------- Section 5: Recommendations ----------
+
+  function renderRecommendations(latest) {
+    const wrap = document.getElementById("recommendWrap");
+    wrap.innerHTML = "";
+    const values = Object.values(latest);
+
+    if (values.length === 0) {
+      wrap.innerHTML = '<div class="empty">No reports submitted yet.</div>';
+      return;
+    }
+
+    if (values.length >= 2) {
+      const sorted = [...values].sort((a, b) => b.percentage - a.percentage);
+      const best = sorted[0];
+      const worst = sorted[sorted.length - 1];
+      if (best.department !== worst.department) {
+        const overall = document.createElement("div");
+        overall.className = "recommend-box";
+        overall.innerHTML = `<strong>Overall:</strong> ${best.department} is the strongest department right now at ${best.percentage}%. ${worst.department} needs the most help at ${worst.percentage}%. A simple next step: ask ${best.department} to share what is working with ${worst.department}.`;
+        wrap.appendChild(overall);
+      }
+    }
+
+    departmentsInOrder().forEach((dept) => {
+      const report = latest[dept];
+      if (!report) return;
+      const { strengths, weaknesses, critical } = categorize(report);
+      const parts = [];
+      if (critical.length) parts.push(`Fix these right away: ${namesOf(critical)}. Give this department extra help this week.`);
+      if (weaknesses.length) parts.push(`Watch these closely and support them: ${namesOf(weaknesses)}.`);
+      if (strengths.length) parts.push(`Keep doing well at: ${namesOf(strengths)}. Other departments can learn from this.`);
+      if (parts.length === 0) parts.push("Not enough activity data yet to give a recommendation.");
+
+      const box = document.createElement("div");
+      box.className = "recommend-box";
+      box.innerHTML = `<strong>${dept}:</strong> ${parts.join(" ")}`;
+      wrap.appendChild(box);
+    });
+  }
+
+  // ---------- Section 6: Monthly reports ----------
+
+  function renderMonthly(ascGroups) {
+    const wrap = document.getElementById("monthlyWrap");
+    wrap.innerHTML = "";
+    const depts = Object.keys(ascGroups).sort((a, b) => a.localeCompare(b));
+
+    if (depts.length === 0) {
+      wrap.innerHTML = '<div class="empty">No monthly reports submitted yet.</div>';
+      return;
+    }
+
+    depts.forEach((dept) => {
+      const block = document.createElement("div");
+      block.style.marginBottom = "18px";
+      const chips = ascGroups[dept].map((r) => `
+        <span class="month-chip">
+          <span class="m-label">${monthLabel(monthKeyOf(r))}</span>
+          <span class="pill ${pillClass(r.percentage)}">${r.percentage}%</span>
+        </span>
+      `).join("");
+      block.innerHTML = `<h3 style="margin:0 0 8px; font-size:15px; color:var(--navy);">${dept}</h3><div>${chips}</div>`;
+      wrap.appendChild(block);
+    });
+  }
+
+  // ---------- Section 7: Quarterly reports (auto, every 4 monthly reports) ----------
+
+  function renderQuarterly(ascGroups) {
+    const wrap = document.getElementById("quarterlyWrap");
+    wrap.innerHTML = "";
+    const depts = Object.keys(ascGroups).sort((a, b) => a.localeCompare(b));
+
+    if (depts.length === 0) {
+      wrap.innerHTML = '<div class="empty">No monthly reports submitted yet, so there are no quarterly reports yet.</div>';
+      return;
+    }
+
+    depts.forEach((dept) => {
+      const reports = ascGroups[dept];
+      const section = document.createElement("div");
+      section.style.marginBottom = "20px";
+      let html = `<h3 style="margin:0 0 8px; font-size:15px; color:var(--navy);">${dept}</h3>`;
+
+      let quarterNum = 0;
+      for (let i = 0; i < reports.length; i += 4) {
+        const chunk = reports.slice(i, i + 4);
+        if (chunk.length === 4) {
+          quarterNum++;
+          const target = chunk.reduce((s, r) => s + (r.target || 0), 0);
+          const actual = chunk.reduce((s, r) => s + (r.actual || 0), 0);
+          const percentage = target > 0 ? Math.round((actual / target) * 1000) / 10 : 0;
+          const months = chunk.map((r) => monthLabel(monthKeyOf(r)));
+          html += `
+            <div class="quarter-card done">
+              <h4>📦 Quarter ${quarterNum} <span class="pill ${pillClass(percentage)}">${percentage}%</span></h4>
+              <div class="q-meta">Built automatically from: ${months.join(", ")}</div>
+              <div class="q-meta">Combined target: ${target} · Combined actual: ${actual}</div>
+            </div>
+          `;
+        } else {
+          const have = chunk.length;
+          const months = chunk.map((r) => monthLabel(monthKeyOf(r)));
+          html += `
+            <div class="quarter-card">
+              <h4>⏳ Quarter ${quarterNum + 1} — collecting reports</h4>
+              <div class="q-meta">${have} of 4 monthly reports received so far: ${months.join(", ")}</div>
+              <div class="progress-track"><div class="progress-fill" style="width:${(have / 4) * 100}%;"></div></div>
+              <div class="q-meta" style="margin-top:6px;">${4 - have} more monthly report(s) needed before this quarter is built automatically.</div>
+            </div>
+          `;
+        }
+      }
+      section.innerHTML = html;
+      wrap.appendChild(section);
+    });
+  }
+
+  // ---------- Render everything ----------
+
+  function render() {
+    const latest = latestByDepartment();
+    const ascGroups = ascendingByDepartment();
+    const steps = [
+      () => renderStrengthsWeaknesses(latest),
+      () => renderCritical(latest),
+      () => renderCompare(latest),
+      () => renderRecommendations(latest),
+      () => renderMonthly(ascGroups),
+      () => renderQuarterly(ascGroups)
+    ];
+    steps.forEach((fn) => {
+      try { fn(); } catch (err) { console.error(err); }
+    });
+  }
+</script>
+
+</body>
+</html>
